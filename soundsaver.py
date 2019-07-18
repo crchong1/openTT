@@ -20,4 +20,5 @@ entry = {
     "sample": recording_arr
 }
 
+# pipeline: rasbpi gets data, 
 collection.usage.insert_one(entry)

@@ -21,13 +21,14 @@ batch_size = 32
 learning_rate = .01
 log_interval = 200
 num_classes = 12 # 2 classes of data- either ping pong or not ping pong
-
+train_test_split_ratio = .7
+PATH = './'
 def main():
     labelMap = getLabels()
     soundData, labelData = formatWav(labelMap)
-    dataloader = loader(soundData, labelData)
+    loaderTrain, loaderTest = loader(soundData, labelData)
     model, optimizer, scheduler = setModel()
-    runModel(model, scheduler, dataloader, optimizer, soundData, labelData)
+    runModel(model, scheduler, loaderTrain, loaderTest, optimizer)
 
 def getLabels():
     f = open(URBAN_SOUND_CSV_PATH)
@@ -88,13 +89,21 @@ class Dataset(Dataset):
 
 
 def loader(soundData, labelData):
-    dataset = Dataset(soundData, labelData) 
-    loader = torch.utils.data.DataLoader(
-        dataset,
+    splitIndex = int(soundData.shape[0]*train_test_split_ratio)
+    print(splitIndex)
+    datasetTrain = Dataset(soundData[0:splitIndex], labelData[0:splitIndex]) 
+    loaderTrain = torch.utils.data.DataLoader(
+        datasetTrain,
         batch_size=batch_size,
         shuffle=False,
     )
-    return loader
+    datasetTest = Dataset(soundData[splitIndex:], labelData[splitIndex:])
+    loaderTest = torch.utils.data.DataLoader(
+        datasetTest,
+        batch_size=batch_size,
+        shuffle=False,
+    )
+    return loaderTrain, loaderTest
 
 def setModel():
     model = CNN()
@@ -151,10 +160,6 @@ def train(model, epoch, train_loader, optimizer):
         label = label.to(device=device, dtype=torch.int64)
         data = data.requires_grad_()
         output = model(data)
-        # print(output)
-        # print(output.shape)
-        # print(label)
-        # print(label.shape)
         loss = F.cross_entropy(output, label) #the loss functions expects a batchSizex12 input
         loss.backward()
         optimizer.step()
@@ -163,20 +168,32 @@ def train(model, epoch, train_loader, optimizer):
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss))
 
-def test(model, soundData, labelData):
+def test(model, test_loader):
     model.eval()
-    net = skorch.NeuralNetClassifier(
-        module=model,
-        train_split=None,
-    )
-    score = cross_val_score(net, soundData, labelData, cv=5, n_jobs = -1)
-    print('Test Accuracy: {}%)\n'.format(score))
+    correct = 0
+    for batch_idx, (data, target) in enumerate(test_loader):
+        data = data.to(device)
+        output = model(data).detach().cpu().numpy()
+        rounded = np.round(output).astype(int)
+        print(output, 'output')
+        print(output.shape, 'shape')
+        rounded_target = target.detach().cpu().numpy().astype(int)
+        correct = correct + np.sum(rounded==rounded_target)
+    print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
+        correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
 
-def runModel(model, scheduler, loader, optimizer, soundData, labelData):
-    for epoch in range(1, 30):
+
+def runModel(model, scheduler, loaderTrain, loaderTest, optimizer):
+    for epoch in range(1, 10):
         scheduler.step()
-        train(model, epoch, loader, optimizer)
-    test(model, soundData, labelData)
+        train(model, epoch, loaderTrain, optimizer)
+    test(model, loaderTest)
+    saveModel(model)
+
+def saveModel(model):
+    torch.save(model.state_dict(), PATH)
+
 
 if __name__ == "__main__":
     main()
