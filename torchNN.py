@@ -22,7 +22,7 @@ learning_rate = .01
 log_interval = 200
 num_classes = 12 # 2 classes of data- either ping pong or not ping pong
 train_test_split_ratio = .7
-PATH = './'
+PATH = './opentt.pth'
 def main():
     labelMap = getLabels()
     soundData, labelData = formatWav(labelMap)
@@ -160,6 +160,9 @@ def train(model, epoch, train_loader, optimizer):
         label = label.to(device=device, dtype=torch.int64)
         data = data.requires_grad_()
         output = model(data)
+        # print(data.detach().cpu().numpy(), 'data')
+        # print(label.detach().cpu().numpy(), 'label')
+        # print(output.detach().cpu().numpy(), 'output')
         loss = F.cross_entropy(output, label) #the loss functions expects a batchSizex12 input
         loss.backward()
         optimizer.step()
@@ -173,12 +176,11 @@ def test(model, test_loader):
     correct = 0
     for batch_idx, (data, target) in enumerate(test_loader):
         data = data.to(device)
-        output = model(data).detach().cpu().numpy()
-        rounded = np.round(output).astype(int)
-        print(output, 'output')
-        print(output.shape, 'shape')
-        rounded_target = target.detach().cpu().numpy().astype(int)
-        correct = correct + np.sum(rounded==rounded_target)
+        output = model(data)
+        _, predicted = torch.max(output, 1)
+        predictions = predicted.data.detach().cpu().numpy()
+        target = target.detach().cpu().numpy()
+        correct += (predictions == target).sum()
     print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
         correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
@@ -192,7 +194,17 @@ def runModel(model, scheduler, loaderTrain, loaderTest, optimizer):
     saveModel(model)
 
 def saveModel(model):
-    torch.save(model.state_dict(), PATH)
+    torch.save(model, PATH)
+
+def predict(sound_arr):
+    model = torch.load(PATH, map_location='cpu')
+    model.eval()
+    tensor = torch.from_numpy(sound_arr)
+    tensor = tensor.to(device)
+    output = model(tensor)
+    _, predicted = torch.max(output, 1)
+    predictions = predicted.data.detach().cpu().numpy()
+    return predictions
 
 
 if __name__ == "__main__":
